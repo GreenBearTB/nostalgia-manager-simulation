@@ -37,7 +37,7 @@ public:
     bool wantQuit() const { return quit_; }
 
 private:
-    enum class Screen { Main, Friendly, Match, Database, Career, Data, About };
+    enum class Screen { Main, Friendly, Tactics, Match, Database, Career, Data, About };
 
     // One snapshot of the match at the moment an event was narrated.
     struct Frame {
@@ -59,6 +59,7 @@ private:
     void beginFullscreen(const char* id, bool withBackground);
     void renderMain();
     void renderFriendly();
+    void renderTactics();
     void renderMatch();
     void renderDatabase();
     void renderCareer();
@@ -68,6 +69,7 @@ private:
     void teamPicker(const char* id, int& leagueIdx, int& teamId, char* filter,
                     size_t filterSz);
     void startMatch(Team* home, Team* away);
+    void openTactics(Team* team, Screen returnTo);
     Team* teamById(int id);
 
     // Career helpers
@@ -85,6 +87,12 @@ private:
 
     AppTexture menuBg_;
     std::vector<std::string> leagues_;
+
+    // Tactics screen
+    Team* tacticsTeam_ = nullptr;
+    Screen tacticsReturn_ = Screen::Friendly;
+    int tacticsXiSel_ = -1;   // selected starter (player id) for a swap
+    int tacticsSubSel_ = -1;  // selected substitute (player id) for a swap
 
     // Friendly selection
     int homeLeague_ = 0, awayLeague_ = 0;
