@@ -769,17 +769,16 @@ void App::renderMatch() {
         ImGui::TableSetupColumn("Home", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("Away", ImGuiTableColumnFlags_WidthStretch);
-        auto row = [](const char* name, const char* h, const char* a) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(h);
-            ImGui::TableSetColumnIndex(1);
-            float w = ImGui::GetContentRegionAvail().x, tw = ImGui::CalcTextSize(name).x;
+        auto centered = [](const char* s, bool dim) {
+            float w = ImGui::GetContentRegionAvail().x, tw = ImGui::CalcTextSize(s).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w - tw) * 0.5f);
-            ImGui::TextDisabled("%s", name);
-            ImGui::TableSetColumnIndex(2);
-            float w2 = ImGui::GetContentRegionAvail().x, tw2 = ImGui::CalcTextSize(a).x;
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + w2 - tw2);
-            ImGui::TextUnformatted(a);
+            if (dim) ImGui::TextDisabled("%s", s); else ImGui::TextUnformatted(s);
+        };
+        auto row = [&](const char* name, const char* h, const char* a) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); centered(h, false);
+            ImGui::TableSetColumnIndex(1); centered(name, true);
+            ImGui::TableSetColumnIndex(2); centered(a, false);
         };
         MatchStats s = f ? f->stats : MatchStats{};
         long totPoss = s.possTicks[0] + s.possTicks[1];
