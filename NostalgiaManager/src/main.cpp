@@ -12,16 +12,16 @@ namespace {
 // Locate the data directory containing TeamsDB.csv, trying a few common spots
 // so the game runs both from Visual Studio and from a terminal.
 std::string findDataDir(int argc, char** argv) {
-    std::vector<std::string> candidates;
-    if (argc > 1) candidates.push_back(argv[1]);
-    candidates.push_back("data");
-    candidates.push_back("../data");
-    candidates.push_back("../../data");
-    candidates.push_back("NostalgiaManager/data");
-    candidates.push_back("../NostalgiaManager/data");
+    // An explicit path argument always wins (skip flags starting with '-').
+    if (argc > 1 && argv[1][0] != '-') return argv[1];
+
+    std::vector<std::string> candidates = {"data", "../data", "../../data",
+                                           "NostalgiaManager/data",
+                                           "../NostalgiaManager/data"};
     for (const auto& c : candidates) {
-        std::ifstream f(c + "/TeamsDB.csv");
-        if (f.is_open()) return c;
+        std::ifstream a(c + "/TeamsDB.csv");
+        std::ifstream b(c + "/datasources.cfg");
+        if (a.is_open() || b.is_open()) return c;
     }
     return "data";
 }
