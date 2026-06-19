@@ -120,7 +120,7 @@ void Game::showSquad(const Team& team) {
             if (p.id == pid) xi.push_back(&p);
     for (const Player* p : xi)
         std::cout << std::left << std::setw(4) << p->shirtNumber << std::setw(22)
-                  << p->name << std::setw(5) << RoleName(p->role)
+                  << p->name << std::setw(5) << PosName(p->primaryPos)
                   << static_cast<int>(PlayerAbility(*p)) << "\n";
 }
 
@@ -466,7 +466,7 @@ void Game::editDatabase() {
             for (const auto& h : hits) {
                 if (shown++ >= 40) { Console::line("  ...(truncated)"); break; }
                 std::cout << "  " << std::left << std::setw(22) << h.second->name
-                          << std::setw(5) << RoleName(h.second->role) << "ability "
+                          << std::setw(5) << PosName(h.second->primaryPos) << "ability "
                           << static_cast<int>(PlayerAbility(*h.second)) << "  ("
                           << h.first->name << ")\n";
             }

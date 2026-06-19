@@ -262,6 +262,8 @@ bool Database::loadPlayers(const std::string& path) {
             p.id = h.getInt(r, {"id"});
             p.name = asciiFold(h.get(r, {"name"}));
             p.role = RoleFromString(h.get(r, {"role"}));
+            p.primaryPos = DefaultPosOf(p.role);
+            p.playablePositions = {p.primaryPos};
             p.shirtNumber = h.getInt(r, {"number"});
             for (const auto& an : AttributeNames()) {
                 std::string v = h.get(r, {normKey(an).c_str()});
@@ -309,8 +311,11 @@ bool Database::loadPlayers(const std::string& path) {
             p.attr.set("Jumping",
                        clampStat((p.attr.get("Heading") + p.attr.get("Strength")) / 2));
 
-        // Role from positional ratings (0-2). Try the detailed CM block first,
-        // then fall back to the broader role columns.
+        // Positions from the CM/FM ratings. Two layouts are supported: a
+        // detailed sided block (Defender Right, Midfielder Left, ...) and the
+        // summary block where role ratings (Defender, Midfield, ...) are stored
+        // separately from flank ratings (Right / Left / Centre). Either way we
+        // build the full set of positions the player can fill plus a primary.
         auto pos = [&](std::initializer_list<const char*> keys) { return h.getInt(r, keys); };
         int rGK = pos({"goalkeeper", "gk"});
         int rD = std::max({pos({"defendercentral"}), pos({"defenderright"}),
@@ -327,14 +332,61 @@ bool Database::loadPlayers(const std::string& path) {
                            pos({"rightforward"}), pos({"leftforward"}),
                            pos({"attack"})});
 
-        struct RoleScore { Role role; int score; };
-        RoleScore arr[] = {{Role::GK, rGK}, {Role::D, rD}, {Role::DM, rDM},
+        // Flank ratings (summary block). When the file has no flank columns we
+        // assume central so a position is still produced.
+        int sR = pos({"right"});
+        int sL = pos({"left"});
+        int sC = pos({"centre", "center"});
+        if (sR <= 0 && sL <= 0 && sC <= 0) sC = 1;
+
+        auto sidedPos = [](Role role, Side s) -> Position {
+            switch (role) {
+                case Role::D:  return s == Side::Right ? Position::DR
+                                    : s == Side::Left ? Position::DL : Position::DC;
+                case Role::M:  return s == Side::Right ? Position::MR
+                                    : s == Side::Left ? Position::ML : Position::MC;
+                case Role::AM: return s == Side::Right ? Position::AMR
+                                    : s == Side::Left ? Position::AML : Position::AMC;
+                case Role::F:  return s == Side::Right ? Position::FR
+                                    : s == Side::Left ? Position::FL : Position::FC;
+                case Role::DM: return Position::DM;
+                case Role::GK: return Position::GK;
+            }
+            return Position::MC;
+        };
+
+        struct RoleRow { Role role; int rating; };
+        RoleRow roles[] = {{Role::GK, rGK}, {Role::D, rD}, {Role::DM, rDM},
                            {Role::M, rM}, {Role::AM, rAM}, {Role::F, rF}};
-        Role best = Role::M;
-        int bestScore = -1;
-        for (const auto& rs : arr)
-            if (rs.score > bestScore) { bestScore = rs.score; best = rs.role; }
-        p.role = best;
+        const Side sides[3] = {Side::Right, Side::Centre, Side::Left};
+        const int sideRating[3] = {sR, sC, sL};
+
+        p.playablePositions.clear();
+        for (const RoleRow& rr : roles) {
+            if (rr.rating <= 0) continue;
+            if (rr.role == Role::GK) { p.playablePositions.push_back(Position::GK); continue; }
+            if (rr.role == Role::DM) { p.playablePositions.push_back(Position::DM); continue; }
+            bool any = false;
+            for (int si = 0; si < 3; ++si)
+                if (sideRating[si] > 0) {
+                    p.playablePositions.push_back(sidedPos(rr.role, sides[si]));
+                    any = true;
+                }
+            if (!any) p.playablePositions.push_back(sidedPos(rr.role, Side::Centre));
+        }
+
+        // Primary = best-rated role on his best-rated flank.
+        Role bestRole = Role::M;
+        int bestRoleRating = -1;
+        for (const RoleRow& rr : roles)
+            if (rr.rating > bestRoleRating) { bestRoleRating = rr.rating; bestRole = rr.role; }
+        Side bestSide = Side::Centre;
+        int bestSideRating = sC;
+        if (sR > bestSideRating) { bestSideRating = sR; bestSide = Side::Right; }
+        if (sL > bestSideRating) { bestSideRating = sL; bestSide = Side::Left; }
+        p.primaryPos = sidedPos(bestRole, bestSide);
+        p.role = RoleOf(p.primaryPos);
+        if (!p.canPlay(p.primaryPos)) p.playablePositions.push_back(p.primaryPos);
 
         // Goalkeeping: no dedicated GK skill in the export, so derive it from a
         // keeper's overall Ability (0-200 -> ~1-20); outfielders get a low value.
