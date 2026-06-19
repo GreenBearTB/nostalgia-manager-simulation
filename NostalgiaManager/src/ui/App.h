@@ -93,6 +93,8 @@ private:
     Screen tacticsReturn_ = Screen::Friendly;
     int tacticsXiSel_ = -1;   // selected starter (player id) for a swap
     int tacticsSubSel_ = -1;  // selected substitute (player id) for a swap
+    int matchSubsUsed_ = 0;   // substitutions made in the current match (max 3)
+    static constexpr int kMaxMatchSubs = 3;
 
     // Friendly selection
     int homeLeague_ = 0, awayLeague_ = 0;

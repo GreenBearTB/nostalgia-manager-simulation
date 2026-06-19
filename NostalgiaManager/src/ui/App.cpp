@@ -415,6 +415,10 @@ void App::renderTactics() {
     ImGui::Spacing();
 
     const ImVec4 gold(0.86f, 0.78f, 0.55f, 1);
+    // Before kickoff any number of changes are allowed; once the match is under
+    // way you may only make up to 3 substitutions.
+    const bool inMatch = (tacticsReturn_ == Screen::Match);
+    const bool subsLeft = !inMatch || matchSubsUsed_ < kMaxMatchSubs;
     float avail = ImGui::GetContentRegionAvail().y - 56;
     if (avail < 200) avail = 200;
     float leftW = 320.0f, rightW = 330.0f;
@@ -452,11 +456,23 @@ void App::renderTactics() {
         }
     }
     if (swapStarter != -1 && swapSub != -1) {
-        auto it = std::find(t->startingXI.begin(), t->startingXI.end(), swapStarter);
-        if (it != t->startingXI.end()) *it = swapSub;
+        if (subsLeft) {
+            auto it = std::find(t->startingXI.begin(), t->startingXI.end(), swapStarter);
+            if (it != t->startingXI.end()) *it = swapSub;
+            if (inMatch) ++matchSubsUsed_;
+        }
         tacticsXiSel_ = tacticsSubSel_ = -1;
     }
-    ImGui::TextDisabled("Click a starter, then a sub, to swap.");
+    if (inMatch) {
+        ImVec4 c = subsLeft ? gold : ImVec4(0.9f, 0.5f, 0.4f, 1);
+        ImGui::TextColored(c, "Substitutions: %d / %d", matchSubsUsed_, kMaxMatchSubs);
+        if (subsLeft)
+            ImGui::TextDisabled("Click a starter, then a sub, to substitute.");
+        else
+            ImGui::TextDisabled("No substitutions remaining.");
+    } else {
+        ImGui::TextDisabled("Click a starter, then a sub, to swap (unlimited before kickoff).");
+    }
     ImGui::EndChild();
 
     // ---- Centre: formation pitch ----
@@ -532,6 +548,9 @@ void App::renderTactics() {
     tacticRow("Formation:", t->formation);
     tacticRow("Playing Style:", MentalityName(t->mentality));
     ImGui::Spacing();
+    // Changing formation re-picks the whole XI, so it is only allowed before
+    // kickoff (otherwise it would bypass the 3-substitution limit).
+    if (inMatch) ImGui::BeginDisabled();
     if (tintButton("Change Formation", IM_COL32(60, 130, 60, 255), ImVec2(-1, 34))) {
         int n = static_cast<int>(sizeof(kFormations) / sizeof(kFormations[0]));
         int cur = 0;
@@ -541,6 +560,7 @@ void App::renderTactics() {
         t->autoSelectXI();
         tacticsXiSel_ = tacticsSubSel_ = -1;
     }
+    if (inMatch) ImGui::EndDisabled();
     if (tintButton("Team Instructions", IM_COL32(150, 120, 60, 255), ImVec2(-1, 34))) {
         t->mentality = static_cast<Mentality>(
             (static_cast<int>(t->mentality) + 1) % 3);
@@ -559,10 +579,12 @@ void App::renderTactics() {
 
     // ---- Action bar ----
     ImGui::Spacing();
+    if (inMatch) ImGui::BeginDisabled();
     if (ImGui::Button("Auto-pick XI", ImVec2(160, 40))) {
         t->autoSelectXI();
         tacticsXiSel_ = tacticsSubSel_ = -1;
     }
+    if (inMatch) ImGui::EndDisabled();
     ImGui::SameLine();
     if (tacticsReturn_ == Screen::Friendly) {
         Team* away = teamById(awayTeam_);
@@ -592,6 +614,7 @@ void App::startMatch(Team* home, Team* away) {
     matchAway_ = away->name;
     matchHomeTeam_ = home;
     matchAwayTeam_ = away;
+    matchSubsUsed_ = 0;
     homeScorers_.clear();
     awayScorers_.clear();
 
