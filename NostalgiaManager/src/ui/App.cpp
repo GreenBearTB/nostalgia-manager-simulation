@@ -455,6 +455,13 @@ void App::renderTactics() {
             if (tacticsXiSel_ != -1) { swapStarter = tacticsXiSel_; swapSub = pl.id; }
             else tacticsSubSel_ = (tacticsSubSel_ == pl.id) ? -1 : pl.id;
         }
+        // Drag a bench player onto a starter's token to substitute.
+        if (subsLeft && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
+            int subId = pl.id;
+            ImGui::SetDragDropPayload("BENCH_PLAYER", &subId, sizeof(int));
+            ImGui::Text("Sub on  %d %s", pl.shirtNumber, pl.name.c_str());
+            ImGui::EndDragDropSource();
+        }
     }
     if (swapStarter != -1 && swapSub != -1) {
         if (subsLeft) {
@@ -468,19 +475,22 @@ void App::renderTactics() {
         ImVec4 c = subsLeft ? gold : ImVec4(0.9f, 0.5f, 0.4f, 1);
         ImGui::TextColored(c, "Substitutions: %d / %d", matchSubsUsed_, kMaxMatchSubs);
         if (subsLeft)
-            ImGui::TextDisabled("Click a starter, then a sub, to substitute.");
+            ImGui::TextDisabled("Drag a sub onto a player, or click a starter then a sub.");
         else
             ImGui::TextDisabled("No substitutions remaining.");
     } else {
-        ImGui::TextDisabled("Click a starter, then a sub, to swap (unlimited before kickoff).");
+        ImGui::TextDisabled("Drag a sub onto a player (or click starter then sub). Unlimited before kickoff.");
     }
     ImGui::EndChild();
 
     // ---- Centre: formation pitch ----
     ImGui::SameLine();
+    int dropStarter = -1, dropSub = -1;  // set when a bench player is dropped on a token
     ImGui::BeginChild("tac_pitch", ImVec2(midW, avail), true);
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImGuiPayload* drag = ImGui::GetDragDropPayload();
+        bool dragging = drag && drag->IsDataType("BENCH_PLAYER");
         ImVec2 o = ImGui::GetCursorScreenPos();
         ImVec2 sz = ImGui::GetContentRegionAvail();
         dl->AddRectFilled(o, ImVec2(o.x + sz.x, o.y + sz.y), IM_COL32(74, 132, 62, 255), 4);
@@ -522,6 +532,27 @@ void App::renderTactics() {
                 bool gk = p->role == Role::GK;
                 ImU32 jersey = gk ? IM_COL32(60, 150, 70, 255) : IM_COL32(46, 96, 176, 255);
                 float r = 21.0f;
+
+                // Invisible button over the token acts as a substitution drop
+                // target (drag a bench player here to swap him in).
+                ImGui::SetCursorScreenPos(ImVec2(x - r, y - r));
+                ImGui::InvisibleButton(("tok" + std::to_string(p->id)).c_str(),
+                                       ImVec2(r * 2, r * 2));
+                bool hovered = ImGui::IsItemHovered();
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* pl =
+                            ImGui::AcceptDragDropPayload("BENCH_PLAYER")) {
+                        dropStarter = p->id;
+                        dropSub = *static_cast<const int*>(pl->Data);
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                if (dragging)  // glow drop targets while a sub is being dragged
+                    dl->AddCircle(ImVec2(x, y), r + 3,
+                                  hovered ? IM_COL32(120, 230, 120, 255)
+                                          : IM_COL32(225, 235, 120, 200),
+                                  24, 3.0f);
+
                 dl->AddCircleFilled(ImVec2(x, y), r, jersey, 24);
                 dl->AddCircle(ImVec2(x, y), r, IM_COL32(225, 200, 120, 255), 24, 2.0f);
                 char num[8];
@@ -540,6 +571,15 @@ void App::renderTactics() {
         }
     }
     ImGui::EndChild();
+    // Apply a drag-and-drop substitution (bench player dropped on a starter).
+    if (dropStarter != -1 && dropSub != -1 && subsLeft) {
+        auto it = std::find(t->startingXI.begin(), t->startingXI.end(), dropStarter);
+        if (it != t->startingXI.end()) {
+            *it = dropSub;
+            if (inMatch) ++matchSubsUsed_;
+        }
+        tacticsXiSel_ = tacticsSubSel_ = -1;
+    }
 
     // ---- Right: Formation & Tactics + Tactical Roles ----
     ImGui::SameLine();
