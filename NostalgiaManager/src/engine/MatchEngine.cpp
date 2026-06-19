@@ -375,6 +375,7 @@ void MatchEngine::resolveBallAction() {
         case Action::Finish:
         case Action::Header: {
             ++shots_[side];
+            ++stats_.shots[side];  // "Attempts" counter on the match screen
             onShot(chosen, finalScore, thr.second);
             break;
         }
