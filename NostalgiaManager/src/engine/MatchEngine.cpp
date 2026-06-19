@@ -153,6 +153,8 @@ double MatchEngine::desire(const Player& p, Action a, const std::string& zone,
     }
     double zmod = cfg_.get("zonemod." + an + "." + zone, 1.0);
     score *= zmod;
+    // Per-role appetite for each action (e.g. defenders rarely dribble).
+    score *= cfg_.get("rolemod." + RoleName(p.role) + "." + an, 1.0);
     if (a == Action::Dribble && opponentNearby)
         score += cfg_.get("bonus.Dribble.opponentNearby", 0.0);
     // Tunable per-action multiplier (balancing knob, spec section 12).
