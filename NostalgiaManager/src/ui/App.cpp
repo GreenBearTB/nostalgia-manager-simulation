@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -626,6 +627,10 @@ void App::startMatch(Team* home, Team* away) {
         f.key = e.key;
         f.minute = static_cast<int>(e.minute);  // already absolute 0-90
         f.pitch = ep->renderPitch();
+        f.ballCol = ep->ballCol();
+        f.ballRow = ep->ballRow();
+        f.carrier = ep->carrierSide();
+        f.stats = ep->stats();
         frames_.push_back(std::move(f));
     };
     MatchResult r = engine.simulate(*home, *away, false, hook);
@@ -726,25 +731,37 @@ void App::renderMatch() {
     ImGui::Columns(1);
     ImGui::Separator();
 
-    // ---- Main row: squad | pitch+stats | squad ----
+    // ---- Main row: [squad + tactics] | [pitch + stats] | [squad + tactics] ----
     const float sideW = 240.0f;
     const float bottomH = 54.0f;
     const float feedH = 150.0f;
+    const float cornerH = 38.0f;
+    const float spacing = ImGui::GetStyle().ItemSpacing.y;
     float rowH = ImGui::GetContentRegionAvail().y - bottomH - feedH - 16;
-    if (rowH < 200) rowH = 200;
+    if (rowH < 240) rowH = 240;
     float centreW = fullW - 2 * (sideW + ImGui::GetStyle().ItemSpacing.x);
+    float squadH = rowH - cornerH - spacing;
 
-    squadPanel("home_sq", matchHome_.c_str(), matchHomeTeam_, ImVec2(sideW, rowH));
+    // Home side: squad list with a "Go to Tactics" button beneath it.
+    ImGui::BeginGroup();
+    squadPanel("home_sq", matchHome_.c_str(), matchHomeTeam_, ImVec2(sideW, squadH));
+    bool homeTac = !matchOver_ && matchHomeTeam_;
+    if (!homeTac) ImGui::BeginDisabled();
+    if (tintButton("Go to Tactics##h", IM_COL32(150, 120, 60, 255), ImVec2(sideW, cornerH))) {
+        playing_ = false;
+        openTactics(matchHomeTeam_, Screen::Match);
+    }
+    if (!homeTac) ImGui::EndDisabled();
+    ImGui::EndGroup();
     ImGui::SameLine();
 
+    // Centre: graphical pitch above the Game Stats panel.
     ImGui::BeginGroup();
-    float statsH = 132.0f;
-    ImGui::BeginChild("pitch", ImVec2(centreW, rowH - statsH - ImGui::GetStyle().ItemSpacing.y),
-                      true);
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(190, 255, 190, 255));
-    if (f) ImGui::TextUnformatted(f->pitch.c_str());
-    ImGui::PopStyleColor();
-    ImGui::EndChild();
+    const float statsH = 188.0f;
+    float pitchH = rowH - statsH - spacing;
+    ImVec2 pitchPos = ImGui::GetCursorScreenPos();
+    drawPitch(pitchPos, ImVec2(centreW, pitchH), f);
+    ImGui::Dummy(ImVec2(centreW, pitchH));
 
     ImGui::BeginChild("stats", ImVec2(centreW, statsH), true);
     panelHeader("Game Stats");
@@ -764,23 +781,45 @@ void App::renderMatch() {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + w2 - tw2);
             ImGui::TextUnformatted(a);
         };
+        MatchStats s = f ? f->stats : MatchStats{};
+        long totPoss = s.possTicks[0] + s.possTicks[1];
+        int poss0 = totPoss ? static_cast<int>(std::lround(100.0 * s.possTicks[0] / totPoss)) : 50;
+        int pp0 = s.passAtt[0] ? static_cast<int>(std::lround(100.0 * s.passOk[0] / s.passAtt[0])) : 0;
+        int pp1 = s.passAtt[1] ? static_cast<int>(std::lround(100.0 * s.passOk[1] / s.passAtt[1])) : 0;
         char hb[16], ab[16];
-        std::snprintf(hb, sizeof(hb), "%d", hg); std::snprintf(ab, sizeof(ab), "%d", ag);
-        row("Goals", hb, ab);
-        if (matchOver_) {
-            std::snprintf(hb, sizeof(hb), "%d", finalHS_);
-            std::snprintf(ab, sizeof(ab), "%d", finalAS_);
-            row("Attempts", hb, ab);
-        } else {
-            row("Attempts", "-", "-");
-        }
+        auto two = [&](int h, int a, const char* name) {
+            std::snprintf(hb, sizeof(hb), "%d", h);
+            std::snprintf(ab, sizeof(ab), "%d", a);
+            row(name, hb, ab);
+        };
+        auto pct = [&](int h, int a, const char* name) {
+            std::snprintf(hb, sizeof(hb), "%d%%", h);
+            std::snprintf(ab, sizeof(ab), "%d%%", a);
+            row(name, hb, ab);
+        };
+        two(s.shots[0], s.shots[1], "Attempts");
+        two(s.onTarget[0], s.onTarget[1], "On goal");
+        two(s.passOk[0], s.passOk[1], "Passing");
+        pct(pp0, pp1, "Passing %");
+        pct(poss0, 100 - poss0, "Possession");
+        two(s.fouls[0], s.fouls[1], "Fouls");
         ImGui::EndTable();
     }
     ImGui::EndChild();
     ImGui::EndGroup();
-
     ImGui::SameLine();
-    squadPanel("away_sq", matchAway_.c_str(), matchAwayTeam_, ImVec2(sideW, rowH));
+
+    // Away side: squad list with a "Go to Tactics" button beneath it.
+    ImGui::BeginGroup();
+    squadPanel("away_sq", matchAway_.c_str(), matchAwayTeam_, ImVec2(sideW, squadH));
+    bool awayTac = !matchOver_ && matchAwayTeam_;
+    if (!awayTac) ImGui::BeginDisabled();
+    if (tintButton("Go to Tactics##a", IM_COL32(150, 120, 60, 255), ImVec2(sideW, cornerH))) {
+        playing_ = false;
+        openTactics(matchAwayTeam_, Screen::Match);
+    }
+    if (!awayTac) ImGui::EndDisabled();
+    ImGui::EndGroup();
 
     // ---- Match events feed ----
     ImGui::BeginChild("feed", ImVec2(fullW, feedH), true);
@@ -811,7 +850,7 @@ void App::renderMatch() {
         char bar[64];
         std::snprintf(bar, sizeof(bar), "%s  (space)", playing_ ? "Pause Match" : "Continue");
         if (tintButton(bar, IM_COL32(60, 120, 170, 255),
-                       ImVec2(fullW - 460, bottomH - 10)))
+                       ImVec2(fullW - 360, bottomH - 10)))
             playing_ = !playing_;
         ImGui::SameLine();
         if (ImGui::Button("Skip to End", ImVec2(140, bottomH - 10))) {
@@ -819,17 +858,72 @@ void App::renderMatch() {
             matchOver_ = true;
         }
         ImGui::SameLine();
-        if (tintButton("Go to Tactics", IM_COL32(150, 120, 60, 255),
-                       ImVec2(150, bottomH - 10))) {
-            playing_ = false;
-            openTactics(matchHomeTeam_, Screen::Match);
-        }
-        ImGui::SameLine();
         ImGui::SetNextItemWidth(200);
         ImGui::SliderFloat("Speed", &speed_, 2.0f, 40.0f, "%.0f ev/s");
     }
 
     ImGui::End();
+}
+
+// Draws the live pitch as a graphical, mowed-grass field split into the three
+// thirds from the mock-up (defence / midfield / attack), with the active third
+// tinted in the possession side's colour and the ball drawn at its grid cell.
+void App::drawPitch(ImVec2 p0, ImVec2 size, const Frame* f) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 p1(p0.x + size.x, p0.y + size.y);
+
+    // Mowed-grass stripes.
+    const int stripes = 9;
+    for (int i = 0; i < stripes; ++i) {
+        float x0 = p0.x + size.x * i / stripes;
+        float x1 = p0.x + size.x * (i + 1) / stripes;
+        ImU32 col = (i % 2) ? IM_COL32(74, 142, 64, 255) : IM_COL32(62, 126, 54, 255);
+        dl->AddRectFilled(ImVec2(x0, p0.y), ImVec2(x1, p1.y), col);
+    }
+
+    const ImU32 line = IM_COL32(232, 240, 230, 210);
+    const float th = 2.0f, inset = 10.0f;
+    ImVec2 a(p0.x + inset, p0.y + inset), b(p1.x - inset, p1.y - inset);
+    float midx = (a.x + b.x) * 0.5f, midy = (a.y + b.y) * 0.5f;
+
+    // Active-third highlight (drawn under the markings).
+    if (f) {
+        int third = (f->ballCol <= 4) ? 0 : (f->ballCol <= 9 ? 1 : 2);
+        float tx0 = a.x + (b.x - a.x) * third / 3.0f;
+        float tx1 = a.x + (b.x - a.x) * (third + 1) / 3.0f;
+        ImU32 hl = (f->carrier == 0) ? IM_COL32(80, 150, 235, 55) : IM_COL32(235, 150, 70, 55);
+        dl->AddRectFilled(ImVec2(tx0, a.y), ImVec2(tx1, b.y), hl);
+    }
+
+    // Boundary, third dividers, halfway line and centre circle.
+    dl->AddRect(a, b, line, 0, 0, th);
+    for (int i = 1; i <= 2; ++i) {
+        float x = a.x + (b.x - a.x) * i / 3.0f;
+        dl->AddLine(ImVec2(x, a.y), ImVec2(x, b.y), IM_COL32(232, 240, 230, 70), 1.5f);
+    }
+    dl->AddLine(ImVec2(midx, a.y), ImVec2(midx, b.y), line, th);
+    float cr = (b.y - a.y) * 0.16f;
+    dl->AddCircle(ImVec2(midx, midy), cr, line, 40, th);
+    dl->AddCircleFilled(ImVec2(midx, midy), 3.0f, line);
+
+    // Penalty boxes and goals at each end.
+    float boxH = (b.y - a.y) * 0.5f, boxW = (b.x - a.x) * 0.12f;
+    dl->AddRect(ImVec2(a.x, midy - boxH / 2), ImVec2(a.x + boxW, midy + boxH / 2), line, 0, 0, th);
+    dl->AddRect(ImVec2(b.x - boxW, midy - boxH / 2), ImVec2(b.x, midy + boxH / 2), line, 0, 0, th);
+    float goalH = (b.y - a.y) * 0.22f;
+    dl->AddRectFilled(ImVec2(a.x - 5, midy - goalH / 2), ImVec2(a.x, midy + goalH / 2),
+                      IM_COL32(240, 240, 240, 220));
+    dl->AddRectFilled(ImVec2(b.x, midy - goalH / 2), ImVec2(b.x + 5, midy + goalH / 2),
+                      IM_COL32(240, 240, 240, 220));
+
+    if (!f) return;
+    // Ball at its grid cell (col 1..13 across length, row 1..9 across width).
+    float bx = a.x + (b.x - a.x) * (f->ballCol - 0.5f) / 13.0f;
+    float by = a.y + (b.y - a.y) * (f->ballRow - 0.5f) / 9.0f;
+    ImU32 ring = (f->carrier == 0) ? IM_COL32(120, 180, 255, 255) : IM_COL32(255, 180, 110, 255);
+    dl->AddCircleFilled(ImVec2(bx, by), 9.0f, ring);
+    dl->AddCircleFilled(ImVec2(bx, by), 6.0f, IM_COL32(255, 255, 255, 255));
+    dl->AddCircle(ImVec2(bx, by), 6.0f, IM_COL32(20, 20, 20, 255), 16, 1.5f);
 }
 
 void App::renderDatabase() {

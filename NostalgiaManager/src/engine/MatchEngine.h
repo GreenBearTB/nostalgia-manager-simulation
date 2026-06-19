@@ -21,11 +21,23 @@ struct MatchEvent {
     bool key = false;  // goals, shots, big chances -> shown prominently
 };
 
+// Live, cumulative match statistics per side (0 = home, 1 = away). Counters
+// only — they never feed back into the simulation, so balance is unaffected.
+struct MatchStats {
+    int shots[2] = {0, 0};       // total attempts
+    int onTarget[2] = {0, 0};    // attempts on goal
+    int passAtt[2] = {0, 0};     // passes attempted
+    int passOk[2] = {0, 0};      // passes completed
+    int fouls[2] = {0, 0};
+    long possTicks[2] = {0, 0};  // ball-action ticks spent in possession
+};
+
 struct MatchResult {
     std::string homeName, awayName;
     int homeGoals = 0;
     int awayGoals = 0;
     int homeShots = 0, awayShots = 0;
+    MatchStats stats;
     std::vector<MatchEvent> events;        // narrated ball actions
     std::vector<std::string> fullLog;      // per-player-per-round verbose log
     bool finished = false;
@@ -50,6 +62,12 @@ public:
     const std::string& homeName() const { return res_->homeName; }
     const std::string& awayName() const { return res_->awayName; }
 
+    // Live state accessors for the graphical match screen (valid mid-sim).
+    const MatchStats& stats() const { return stats_; }
+    int ballCol() const { return ball_.col; }   // 1..13, goal-to-goal
+    int ballRow() const { return ball_.row; }    // 1..9, across the pitch
+    int carrierSide() const { return carrierSide_; }  // 0 home, 1 away, -1 none
+
 private:
     const Config& cfg_;
     Rng rng_;
@@ -63,6 +81,7 @@ private:
     bool aerial_ = false;
     int score_[2] = {0, 0};
     int shots_[2] = {0, 0};
+    MatchStats stats_;
 
     MatchResult* res_ = nullptr;
     bool verbose_ = false;

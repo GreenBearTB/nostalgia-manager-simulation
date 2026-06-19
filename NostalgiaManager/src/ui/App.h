@@ -46,6 +46,9 @@ private:
         int minute = 0;
         std::string pitch;
         int hg = 0, ag = 0;
+        int ballCol = 7, ballRow = 5;  // 1..13 (length), 1..9 (width)
+        int carrier = 0;               // 0 home, 1 away
+        MatchStats stats;              // cumulative stats at this frame
     };
 
     // Career standings row.
@@ -61,6 +64,7 @@ private:
     void renderFriendly();
     void renderTactics();
     void renderMatch();
+    void drawPitch(ImVec2 pos, ImVec2 size, const Frame* f);
     void renderDatabase();
     void renderCareer();
     void renderData();

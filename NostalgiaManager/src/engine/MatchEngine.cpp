@@ -94,6 +94,7 @@ MatchResult MatchEngine::simulate(Team& home, Team& away, bool verbose,
     res.awayGoals = score_[1];
     res.homeShots = shots_[0];
     res.awayShots = shots_[1];
+    res.stats = stats_;
     logEvent("Full time: " + home.name + " " + std::to_string(score_[0]) + " - " +
                  std::to_string(score_[1]) + " " + away.name,
              true);
@@ -250,6 +251,8 @@ void MatchEngine::resolveBallAction() {
     int side = carrierSide_;
     int defendingSide = 1 - side;
 
+    ++stats_.possTicks[side];  // one ball-action tick of possession
+
     int progress = zoneProgress(ball_, side);
     std::string zone = zoneName(progress);
 
@@ -308,6 +311,8 @@ void MatchEngine::resolveBallAction() {
         case Action::Passing:
         case Action::Longpass: {
             bool isLong = (chosen == Action::Longpass);
+            ++stats_.passAtt[side];
+            if (success) ++stats_.passOk[side];
             if (success) {
                 Player* target = choosePassTarget(isLong);
                 if (!target && isLong) target = choosePassTarget(false);
@@ -353,6 +358,12 @@ void MatchEngine::resolveBallAction() {
                          (bestDef ? shirt(*bestDef) : std::string("the defender")) +
                          " into " + CellName(ball_));
             } else {
+                // A beaten defender concedes a foul some of the time, more often
+                // the more aggressive they are (stat counter only - no free kick).
+                double aggr = bestDef ? bestDef->norm("Aggression") : 0.5;
+                if (rng_.chance(cfg_.get("foul.base", 0.05) +
+                                cfg_.get("foul.aggression", 0.10) * aggr))
+                    ++stats_.fouls[defendingSide];
                 logEvent(shirt(p) + " tries to dribble past " +
                          (bestDef ? shirt(*bestDef) : std::string("the defender")) +
                          ", but loses possession");
@@ -382,6 +393,7 @@ void MatchEngine::onShot(Action a, double finalScore, double thr) {
         goalKick(defendingSide);
         return;
     }
+    ++stats_.onTarget[side];
     // On target -> goalkeeper save model.
     Player* gk = goalkeeper(defendingSide);
     double gkNorm = gk ? gk->norm("Goalkeeping") : 0.2;
