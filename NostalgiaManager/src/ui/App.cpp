@@ -84,23 +84,57 @@ void squadPanel(const char* id, const char* title, const Team* t, const ImVec2& 
         ImGui::EndChild();
         return;
     }
-    std::vector<const Player*> ps;
-    for (const auto& p : t->squad) ps.push_back(&p);
-    std::sort(ps.begin(), ps.end(),
-              [](const Player* a, const Player* b) { return a->shirtNumber < b->shirtNumber; });
-    int i = 0;
-    ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Starting XI");
-    for (const Player* p : ps) {
-        if (i == 11) {
-            ImGui::Spacing();
-            ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Substitutes");
-        }
-        if (i >= 18) break;
+    // Show the configured Starting XI (in selection order) first, then the rest
+    // as substitutes, so the side reflects any tactics changes.
+    std::vector<const Player*> starters, subs;
+    for (int pid : t->startingXI)
+        for (const auto& p : t->squad)
+            if (p.id == pid) { starters.push_back(&p); break; }
+    for (const auto& p : t->squad) {
+        bool isStarter = std::find(t->startingXI.begin(), t->startingXI.end(), p.id) !=
+                         t->startingXI.end();
+        if (!isStarter) subs.push_back(&p);
+    }
+    auto line = [](const Player* p) {
         ImGui::Text("%2d  %-3s %s", p->shirtNumber, RoleName(p->role).c_str(),
                     p->name.c_str());
-        ++i;
+    };
+    ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Starting XI");
+    for (const Player* p : starters) line(p);
+    ImGui::Spacing();
+    ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Substitutes");
+    int shown = 0;
+    for (const Player* p : subs) {
+        if (shown++ >= 7) break;
+        line(p);
     }
     ImGui::EndChild();
+}
+
+// Selectable formations offered on the Tactics screen.
+const char* const kFormations[] = {"4-4-2",   "4-3-3", "3-5-2",   "4-5-1",
+                                   "5-3-2",   "4-4-1-1", "3-4-3", "4-2-3-1",
+                                   "5-4-1",   "4-1-4-1"};
+
+// Best starter for a given attribute (used to derive set-piece takers / captain).
+const Player* bestStarterFor(Team* t, const char* attr, bool outfieldOnly) {
+    const Player* best = nullptr;
+    double bestVal = -1.0;
+    for (int pid : t->startingXI) {
+        const Player* p = t->findPlayer(pid);
+        if (!p) continue;
+        if (outfieldOnly && p->role == Role::GK) continue;
+        double v = p->attr.get(attr);
+        if (v > bestVal) { bestVal = v; best = p; }
+    }
+    return best;
+}
+
+// One "label: value" row inside a tactics info panel.
+void tacticRow(const char* label, const std::string& value) {
+    ImGui::TextColored(ImVec4(0.78f, 0.70f, 0.50f, 1), "%s", label);
+    ImGui::SameLine(150);
+    ImGui::TextColored(ImVec4(0.95f, 0.92f, 0.82f, 1), "%s", value.c_str());
 }
 }  // namespace
 
@@ -201,6 +235,7 @@ void App::render() {
     switch (screen_) {
         case Screen::Main: renderMain(); break;
         case Screen::Friendly: renderFriendly(); break;
+        case Screen::Tactics: renderTactics(); break;
         case Screen::Match: renderMatch(); break;
         case Screen::Database: renderDatabase(); break;
         case Screen::Career: renderCareer(); break;
@@ -344,12 +379,205 @@ void App::renderFriendly() {
     bool ok = home && away && home->id != away->id && home->squad.size() >= 7 &&
               away->squad.size() >= 7;
     if (!ok) ImGui::BeginDisabled();
-    if (ImGui::Button("Kick Off", ImVec2(200, 40))) startMatch(home, away);
+    if (tintButton("Continue to Tactics", IM_COL32(86, 150, 38, 255), ImVec2(220, 40)))
+        openTactics(home, Screen::Friendly);
     if (!ok) ImGui::EndDisabled();
     if (home && away && home->id == away->id)
         ImGui::TextDisabled("Pick two different teams.");
     else if ((home && home->squad.size() < 7) || (away && away->squad.size() < 7))
         ImGui::TextDisabled("Both teams need at least 7 players.");
+
+    ImGui::End();
+}
+
+void App::openTactics(Team* team, Screen returnTo) {
+    tacticsTeam_ = team;
+    tacticsReturn_ = returnTo;
+    tacticsXiSel_ = -1;
+    tacticsSubSel_ = -1;
+    if (team && team->startingXI.empty()) team->autoSelectXI();
+    screen_ = Screen::Tactics;
+}
+
+void App::renderTactics() {
+    beginScreen("Tactics");
+    Team* t = tacticsTeam_;
+    if (ImGui::Button("< Back")) { screen_ = tacticsReturn_; ImGui::End(); return; }
+    if (!t) {
+        ImGui::TextDisabled("No team selected.");
+        ImGui::End();
+        return;
+    }
+    ImGui::SameLine();
+    ImGui::SetWindowFontScale(1.25f);
+    ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.45f, 1), "%s", t->name.c_str());
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Spacing();
+
+    const ImVec4 gold(0.86f, 0.78f, 0.55f, 1);
+    float avail = ImGui::GetContentRegionAvail().y - 56;
+    if (avail < 200) avail = 200;
+    float leftW = 320.0f, rightW = 330.0f;
+    float midW = ImGui::GetContentRegionAvail().x - leftW - rightW - 24;
+    if (midW < 260) midW = 260;
+
+    // ---- Left: interactive squad (click a starter then a sub to swap) ----
+    ImGui::BeginChild("tac_squad", ImVec2(leftW, avail), true);
+    panelHeader("Squad");
+    ImGui::TextColored(gold, "Starting XI");
+    int swapStarter = -1, swapSub = -1;
+    for (int pid : t->startingXI) {
+        Player* p = t->findPlayer(pid);
+        if (!p) continue;
+        char lbl[160];
+        std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", p->shirtNumber,
+                      RoleName(p->role).c_str(), p->name.c_str());
+        if (ImGui::Selectable(lbl, tacticsXiSel_ == pid)) {
+            tacticsXiSel_ = (tacticsXiSel_ == pid) ? -1 : pid;
+            tacticsSubSel_ = -1;
+        }
+    }
+    ImGui::Spacing();
+    ImGui::TextColored(gold, "Substitutes");
+    for (const Player& pl : t->squad) {
+        bool starting = std::find(t->startingXI.begin(), t->startingXI.end(), pl.id) !=
+                        t->startingXI.end();
+        if (starting) continue;
+        char lbl[160];
+        std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", pl.shirtNumber,
+                      RoleName(pl.role).c_str(), pl.name.c_str());
+        if (ImGui::Selectable(lbl, tacticsSubSel_ == pl.id)) {
+            if (tacticsXiSel_ != -1) { swapStarter = tacticsXiSel_; swapSub = pl.id; }
+            else tacticsSubSel_ = (tacticsSubSel_ == pl.id) ? -1 : pl.id;
+        }
+    }
+    if (swapStarter != -1 && swapSub != -1) {
+        auto it = std::find(t->startingXI.begin(), t->startingXI.end(), swapStarter);
+        if (it != t->startingXI.end()) *it = swapSub;
+        tacticsXiSel_ = tacticsSubSel_ = -1;
+    }
+    ImGui::TextDisabled("Click a starter, then a sub, to swap.");
+    ImGui::EndChild();
+
+    // ---- Centre: formation pitch ----
+    ImGui::SameLine();
+    ImGui::BeginChild("tac_pitch", ImVec2(midW, avail), true);
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 o = ImGui::GetCursorScreenPos();
+        ImVec2 sz = ImGui::GetContentRegionAvail();
+        dl->AddRectFilled(o, ImVec2(o.x + sz.x, o.y + sz.y), IM_COL32(74, 132, 62, 255), 4);
+        int stripes = 10;
+        for (int s = 0; s < stripes; ++s) {
+            if (s % 2) continue;
+            float y0 = o.y + sz.y * s / stripes;
+            float y1 = o.y + sz.y * (s + 1) / stripes;
+            dl->AddRectFilled(ImVec2(o.x, y0), ImVec2(o.x + sz.x, y1),
+                              IM_COL32(82, 142, 68, 255));
+        }
+        ImU32 line = IM_COL32(225, 235, 220, 150);
+        dl->AddRect(ImVec2(o.x + 8, o.y + 8), ImVec2(o.x + sz.x - 8, o.y + sz.y - 8),
+                    line, 0, 0, 2.0f);
+        dl->AddLine(ImVec2(o.x + 8, o.y + sz.y * 0.5f),
+                    ImVec2(o.x + sz.x - 8, o.y + sz.y * 0.5f), line, 2.0f);
+        dl->AddCircle(ImVec2(o.x + sz.x * 0.5f, o.y + sz.y * 0.5f),
+                      sz.x * 0.12f, line, 32, 2.0f);
+
+        // Group starters into bands from attack (top) to goalkeeper (bottom).
+        const Role order[] = {Role::F, Role::AM, Role::M, Role::DM, Role::D, Role::GK};
+        std::vector<std::vector<Player*>> bands;
+        for (Role role : order) {
+            std::vector<Player*> band;
+            for (int pid : t->startingXI) {
+                Player* p = t->findPlayer(pid);
+                if (p && p->role == role) band.push_back(p);
+            }
+            if (!band.empty()) bands.push_back(std::move(band));
+        }
+        int nb = static_cast<int>(bands.size());
+        float padX = 40.0f, padY = 34.0f;
+        for (int b = 0; b < nb; ++b) {
+            float y = o.y + padY + (sz.y - 2 * padY) * (b + 0.5f) / nb;
+            int m = static_cast<int>(bands[b].size());
+            for (int j = 0; j < m; ++j) {
+                float x = o.x + padX + (sz.x - 2 * padX) * (j + 0.5f) / m;
+                Player* p = bands[b][j];
+                bool gk = p->role == Role::GK;
+                ImU32 jersey = gk ? IM_COL32(60, 150, 70, 255) : IM_COL32(46, 96, 176, 255);
+                float r = 21.0f;
+                dl->AddCircleFilled(ImVec2(x, y), r, jersey, 24);
+                dl->AddCircle(ImVec2(x, y), r, IM_COL32(225, 200, 120, 255), 24, 2.0f);
+                char num[8];
+                std::snprintf(num, sizeof(num), "%d", p->shirtNumber);
+                ImVec2 ns = ImGui::CalcTextSize(num);
+                dl->AddText(ImVec2(x - ns.x * 0.5f, y - ns.y * 0.5f),
+                            IM_COL32(255, 255, 255, 255), num);
+                char nm[64];
+                std::snprintf(nm, sizeof(nm), "%s", p->name.c_str());
+                ImVec2 ms = ImGui::CalcTextSize(nm);
+                float lx = x - ms.x * 0.5f - 4, ly = y + r + 3;
+                dl->AddRectFilled(ImVec2(lx, ly), ImVec2(lx + ms.x + 8, ly + ms.y + 4),
+                                  IM_COL32(20, 24, 18, 210), 3);
+                dl->AddText(ImVec2(lx + 4, ly + 2), IM_COL32(238, 232, 214, 255), nm);
+            }
+        }
+    }
+    ImGui::EndChild();
+
+    // ---- Right: Formation & Tactics + Tactical Roles ----
+    ImGui::SameLine();
+    ImGui::BeginChild("tac_right", ImVec2(rightW, avail), false);
+    ImGui::BeginChild("tac_form", ImVec2(0, avail * 0.46f), true);
+    panelHeader("Formation & Tactics");
+    tacticRow("Formation:", t->formation);
+    tacticRow("Playing Style:", MentalityName(t->mentality));
+    ImGui::Spacing();
+    if (tintButton("Change Formation", IM_COL32(60, 130, 60, 255), ImVec2(-1, 34))) {
+        int n = static_cast<int>(sizeof(kFormations) / sizeof(kFormations[0]));
+        int cur = 0;
+        for (int i = 0; i < n; ++i)
+            if (t->formation == kFormations[i]) { cur = i; break; }
+        t->formation = kFormations[(cur + 1) % n];
+        t->autoSelectXI();
+        tacticsXiSel_ = tacticsSubSel_ = -1;
+    }
+    if (tintButton("Team Instructions", IM_COL32(150, 120, 60, 255), ImVec2(-1, 34))) {
+        t->mentality = static_cast<Mentality>(
+            (static_cast<int>(t->mentality) + 1) % 3);
+    }
+    ImGui::EndChild();
+
+    ImGui::BeginChild("tac_roles", ImVec2(0, 0), true);
+    panelHeader("Tactical Roles");
+    auto nameOf = [](const Player* p) { return p ? p->name : std::string("-"); };
+    tacticRow("Corner Kicks:", nameOf(bestStarterFor(t, "Creativity", true)));
+    tacticRow("Free Kicks:", nameOf(bestStarterFor(t, "Shooting", true)));
+    tacticRow("Penalties:", nameOf(bestStarterFor(t, "Determination", true)));
+    tacticRow("Captain:", nameOf(bestStarterFor(t, "Influence", false)));
+    ImGui::EndChild();
+    ImGui::EndChild();
+
+    // ---- Action bar ----
+    ImGui::Spacing();
+    if (ImGui::Button("Auto-pick XI", ImVec2(160, 40))) {
+        t->autoSelectXI();
+        tacticsXiSel_ = tacticsSubSel_ = -1;
+    }
+    ImGui::SameLine();
+    if (tacticsReturn_ == Screen::Friendly) {
+        Team* away = teamById(awayTeam_);
+        bool ok = away && t->id != away->id;
+        if (!ok) ImGui::BeginDisabled();
+        if (tintButton("Kick Off", IM_COL32(86, 150, 38, 255), ImVec2(220, 40)))
+            startMatch(t, away);
+        if (!ok) ImGui::EndDisabled();
+    } else if (tacticsReturn_ == Screen::Match) {
+        if (tintButton("Resume Match", IM_COL32(70, 120, 150, 255), ImVec2(220, 40)))
+            screen_ = Screen::Match;
+    } else {
+        if (tintButton("Back to Career", IM_COL32(196, 150, 40, 255), ImVec2(220, 40)))
+            screen_ = Screen::Career;
+    }
 
     ImGui::End();
 }
@@ -563,12 +791,18 @@ void App::renderMatch() {
                        ImVec2(fullW - 460, bottomH - 10)))
             playing_ = !playing_;
         ImGui::SameLine();
-        if (ImGui::Button("Skip to End", ImVec2(160, bottomH - 10))) {
+        if (ImGui::Button("Skip to End", ImVec2(140, bottomH - 10))) {
             playIdx_ = frames_.size();
             matchOver_ = true;
         }
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(260);
+        if (tintButton("Go to Tactics", IM_COL32(150, 120, 60, 255),
+                       ImVec2(150, bottomH - 10))) {
+            playing_ = false;
+            openTactics(matchHomeTeam_, Screen::Match);
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200);
         ImGui::SliderFloat("Speed", &speed_, 2.0f, 40.0f, "%.0f ev/s");
     }
 
@@ -783,6 +1017,8 @@ void App::renderCareer() {
     if (done) ImGui::BeginDisabled();
     if (ImGui::Button("Advance Round")) careerAdvance();
     if (done) ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Tactics") && myteam) openTactics(myteam, Screen::Career);
     ImGui::SameLine();
     if (ImGui::Button("Save")) careerSave();
     if (done) ImGui::SameLine(), ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "Season complete!");
