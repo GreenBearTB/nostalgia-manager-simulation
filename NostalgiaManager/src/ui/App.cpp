@@ -42,6 +42,25 @@ bool parseScore(const std::string& text, int& h, int& a) {
 
 double playerOverall(const Player& p) { return PlayerAbility(p); }
 
+// "DR, WBR, MR" - every position the player can fill.
+std::string playablePosStr(const Player& p) {
+    std::string s;
+    for (Position pos : p.playablePositions) {
+        if (!s.empty()) s += ", ";
+        s += PosName(pos);
+    }
+    return s.empty() ? PosName(p.primaryPos) : s;
+}
+
+// Hover tooltip on a player row listing natural + alternative positions.
+void positionTooltip(const Player& p) {
+    if (!ImGui::IsItemHovered()) return;
+    ImGui::BeginTooltip();
+    ImGui::Text("Natural: %s", PosName(p.primaryPos).c_str());
+    ImGui::Text("Can play: %s", playablePosStr(p).c_str());
+    ImGui::EndTooltip();
+}
+
 // Shade an RGBA colour by a multiplier (clamped), keeping alpha.
 ImU32 shade(ImU32 c, float m) {
     ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
@@ -97,7 +116,7 @@ void squadPanel(const char* id, const char* title, const Team* t, const ImVec2& 
         if (!isStarter) subs.push_back(&p);
     }
     auto line = [](const Player* p) {
-        ImGui::Text("%2d  %-3s %s", p->shirtNumber, RoleName(p->role).c_str(),
+        ImGui::Text("%2d  %-3s %s", p->shirtNumber, PosName(p->primaryPos).c_str(),
                     p->name.c_str());
     };
     ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Starting XI");
@@ -436,11 +455,12 @@ void App::renderTactics() {
         if (!p) continue;
         char lbl[160];
         std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", p->shirtNumber,
-                      RoleName(p->role).c_str(), p->name.c_str());
+                      PosName(p->primaryPos).c_str(), p->name.c_str());
         if (ImGui::Selectable(lbl, tacticsXiSel_ == pid)) {
             tacticsXiSel_ = (tacticsXiSel_ == pid) ? -1 : pid;
             tacticsSubSel_ = -1;
         }
+        positionTooltip(*p);
     }
     ImGui::Spacing();
     ImGui::TextColored(gold, "Substitutes");
@@ -450,11 +470,12 @@ void App::renderTactics() {
         if (starting) continue;
         char lbl[160];
         std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", pl.shirtNumber,
-                      RoleName(pl.role).c_str(), pl.name.c_str());
+                      PosName(pl.primaryPos).c_str(), pl.name.c_str());
         if (ImGui::Selectable(lbl, tacticsSubSel_ == pl.id)) {
             if (tacticsXiSel_ != -1) { swapStarter = tacticsXiSel_; swapSub = pl.id; }
             else tacticsSubSel_ = (tacticsSubSel_ == pl.id) ? -1 : pl.id;
         }
+        positionTooltip(pl);
         // Drag a bench player onto a starter's token to substitute.
         if (subsLeft && ImGui::BeginDragDropSource(ImGuiDragDropFlags_None)) {
             int subId = pl.id;
@@ -519,6 +540,14 @@ void App::renderTactics() {
                 Player* p = t->findPlayer(pid);
                 if (p && p->role == role) band.push_back(p);
             }
+            // Left flank to the left, right flank to the right.
+            std::stable_sort(band.begin(), band.end(), [](Player* a, Player* b) {
+                auto rank = [](Player* p) {
+                    Side s = SideOf(p->primaryPos);
+                    return s == Side::Left ? 0 : s == Side::Centre ? 1 : 2;
+                };
+                return rank(a) < rank(b);
+            });
             if (!band.empty()) bands.push_back(std::move(band));
         }
         int nb = static_cast<int>(bands.size());
@@ -560,6 +589,11 @@ void App::renderTactics() {
                 ImVec2 ns = ImGui::CalcTextSize(num);
                 dl->AddText(ImVec2(x - ns.x * 0.5f, y - ns.y * 0.5f),
                             IM_COL32(255, 255, 255, 255), num);
+                // Position label above the token.
+                std::string ptxt = PosName(p->primaryPos);
+                ImVec2 ps = ImGui::CalcTextSize(ptxt.c_str());
+                dl->AddText(ImVec2(x - ps.x * 0.5f, y - r - ps.y - 1),
+                            IM_COL32(248, 214, 130, 255), ptxt.c_str());
                 char nm[64];
                 std::snprintf(nm, sizeof(nm), "%s", p->name.c_str());
                 ImVec2 ms = ImGui::CalcTextSize(nm);
@@ -1003,7 +1037,8 @@ void App::renderDatabase() {
             ImGui::TableSetColumnIndex(1);
             ImGui::TextUnformatted(t ? t->name.c_str() : "-");
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextUnformatted(RoleName(p->role).c_str());
+            ImGui::TextUnformatted(PosName(p->primaryPos).c_str());
+            positionTooltip(*p);
             ImGui::TableSetColumnIndex(3);
             ImGui::Text("%.0f", playerOverall(*p));
             ImGui::TableSetColumnIndex(4);

@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <vector>
 
 #include "Pitch.h"
@@ -43,6 +44,20 @@ inline void PlaceStartingXI(Team& team, int side) {
             Player* p = team.findPlayer(pid);
             if (p && p->role == role) group.push_back(p);
         }
+        // Order each line right -> centre -> left so wide players sit on their
+        // flank (right = top rows, left = bottom rows).
+        auto sideRank = [](const Player* p) {
+            switch (SideOf(p->primaryPos)) {
+                case Side::Right:  return 0;
+                case Side::Centre: return 1;
+                case Side::Left:   return 2;
+            }
+            return 1;
+        };
+        std::stable_sort(group.begin(), group.end(),
+                         [&](const Player* a, const Player* b) {
+                             return sideRank(a) < sideRank(b);
+                         });
         int col = RoleColumn(role, side, team.mentality);
         int n = static_cast<int>(group.size());
         for (int i = 0; i < n; ++i) {
