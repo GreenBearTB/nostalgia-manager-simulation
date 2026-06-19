@@ -42,6 +42,16 @@ bool parseScore(const std::string& text, int& h, int& a) {
 
 double playerOverall(const Player& p) { return PlayerAbility(p); }
 
+// "Michael Laudrup" -> "M.Laudrup" (first initial + surname).
+std::string shortName(const std::string& full) {
+    size_t sp = full.find(' ');
+    if (sp == std::string::npos || sp == 0) return full;
+    std::string surname = full.substr(sp + 1);
+    while (!surname.empty() && surname.front() == ' ') surname.erase(surname.begin());
+    if (surname.empty()) return full;
+    return std::string(1, full[0]) + "." + surname;
+}
+
 // "DR, WBR, MR" - every position the player can fill.
 std::string playablePosStr(const Player& p) {
     std::string s;
@@ -455,7 +465,7 @@ void App::renderTactics() {
         if (!p) continue;
         char lbl[160];
         std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", p->shirtNumber,
-                      PosName(p->primaryPos).c_str(), p->name.c_str());
+                      PosName(p->primaryPos).c_str(), shortName(p->name).c_str());
         if (ImGui::Selectable(lbl, tacticsXiSel_ == pid)) {
             tacticsXiSel_ = (tacticsXiSel_ == pid) ? -1 : pid;
             tacticsSubSel_ = -1;
@@ -470,7 +480,7 @@ void App::renderTactics() {
         if (starting) continue;
         char lbl[160];
         std::snprintf(lbl, sizeof(lbl), "%2d  %-3s %s", pl.shirtNumber,
-                      PosName(pl.primaryPos).c_str(), pl.name.c_str());
+                      PosName(pl.primaryPos).c_str(), shortName(pl.name).c_str());
         if (ImGui::Selectable(lbl, tacticsSubSel_ == pl.id)) {
             if (tacticsXiSel_ != -1) { swapStarter = tacticsXiSel_; swapSub = pl.id; }
             else tacticsSubSel_ = (tacticsSubSel_ == pl.id) ? -1 : pl.id;
@@ -595,7 +605,7 @@ void App::renderTactics() {
                 dl->AddText(ImVec2(x - ps.x * 0.5f, y - r - ps.y - 1),
                             IM_COL32(248, 214, 130, 255), ptxt.c_str());
                 char nm[64];
-                std::snprintf(nm, sizeof(nm), "%s", p->name.c_str());
+                std::snprintf(nm, sizeof(nm), "%s", shortName(p->name).c_str());
                 ImVec2 ms = ImGui::CalcTextSize(nm);
                 float lx = x - ms.x * 0.5f - 4, ly = y + r + 3;
                 dl->AddRectFilled(ImVec2(lx, ly), ImVec2(lx + ms.x + 8, ly + ms.y + 4),
