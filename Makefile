@@ -30,7 +30,8 @@ IMGUI_SRC = $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp \
             $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
 GUI_SRC = $(CORE) $(SRCDIR)/ui/App.cpp $(SRCDIR)/platform/main_glfw.cpp $(IMGUI_SRC)
 GUI_BIN = $(BUILDDIR)/nm-gui
-GUI_INC = -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
+STB_DIR = third_party/stb
+GUI_INC = -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I$(STB_DIR)
 GUI_LIBS = -lglfw -lGL -ldl -lpthread
 
 .PHONY: all console gui run clean

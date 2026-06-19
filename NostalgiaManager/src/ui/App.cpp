@@ -40,15 +40,124 @@ bool parseScore(const std::string& text, int& h, int& a) {
 }
 
 double playerOverall(const Player& p) { return PlayerAbility(p); }
+
+// Shade an RGBA colour by a multiplier (clamped), keeping alpha.
+ImU32 shade(ImU32 c, float m) {
+    ImVec4 v = ImGui::ColorConvertU32ToFloat4(c);
+    auto cl = [](float x) { return x < 0 ? 0.f : (x > 1 ? 1.f : x); };
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(cl(v.x * m), cl(v.y * m), cl(v.z * m), v.w));
+}
+
+// A glossy, beveled coloured button matching the start-menu art.
+bool tintButton(const char* label, ImU32 base, const ImVec2& size) {
+    ImGui::PushStyleColor(ImGuiCol_Button, base);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, shade(base, 1.25f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, shade(base, 0.8f));
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+    ImGui::PushStyleColor(ImGuiCol_Border, shade(base, 1.7f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+    bool r = ImGui::Button(label, size);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(5);
+    return r;
+}
+
+// Section header inside a panel: a coloured bar with centred title.
+void panelHeader(const char* title, ImU32 col = IM_COL32(120, 70, 40, 255)) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    float w = ImGui::GetContentRegionAvail().x;
+    float h = ImGui::GetTextLineHeight() + 10;
+    dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), col, 4.0f);
+    dl->AddRect(p, ImVec2(p.x + w, p.y + h), IM_COL32(210, 170, 90, 255), 4.0f, 0, 1.5f);
+    ImVec2 ts = ImGui::CalcTextSize(title);
+    dl->AddText(ImVec2(p.x + (w - ts.x) * 0.5f, p.y + 5), IM_COL32(245, 225, 170, 255), title);
+    ImGui::Dummy(ImVec2(w, h + 4));
+}
+
+// Squad list panel (Starting XI then Substitutes), as in the match mock-up.
+void squadPanel(const char* id, const char* title, const Team* t, const ImVec2& size) {
+    ImGui::BeginChild(id, size, true);
+    panelHeader(title);
+    if (!t) {
+        ImGui::TextDisabled("-");
+        ImGui::EndChild();
+        return;
+    }
+    std::vector<const Player*> ps;
+    for (const auto& p : t->squad) ps.push_back(&p);
+    std::sort(ps.begin(), ps.end(),
+              [](const Player* a, const Player* b) { return a->shirtNumber < b->shirtNumber; });
+    int i = 0;
+    ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Starting XI");
+    for (const Player* p : ps) {
+        if (i == 11) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.86f, 0.78f, 0.55f, 1), "Substitutes");
+        }
+        if (i >= 18) break;
+        ImGui::Text("%2d  %-3s %s", p->shirtNumber, RoleName(p->role).c_str(),
+                    p->name.c_str());
+        ++i;
+    }
+    ImGui::EndChild();
+}
 }  // namespace
+
+void ApplyNostalgiaTheme() {
+    ImGuiStyle& s = ImGui::GetStyle();
+    s.WindowRounding = 0.0f;
+    s.FrameRounding = 5.0f;
+    s.GrabRounding = 4.0f;
+    s.ChildRounding = 6.0f;
+    s.PopupRounding = 5.0f;
+    s.FrameBorderSize = 1.0f;
+    s.WindowBorderSize = 0.0f;
+    s.FramePadding = ImVec2(10, 6);
+    s.ItemSpacing = ImVec2(10, 8);
+    s.ScrollbarSize = 14.0f;
+
+    ImVec4* c = s.Colors;
+    auto col = [](int r, int g, int b, int a = 255) {
+        return ImVec4(r / 255.f, g / 255.f, b / 255.f, a / 255.f);
+    };
+    c[ImGuiCol_WindowBg]        = col(24, 30, 22);       // dark pitch green
+    c[ImGuiCol_ChildBg]         = col(34, 30, 24, 235);  // leather
+    c[ImGuiCol_PopupBg]         = col(28, 26, 22, 245);
+    c[ImGuiCol_Border]          = col(120, 92, 48);      // muted gold
+    c[ImGuiCol_FrameBg]         = col(48, 42, 32);
+    c[ImGuiCol_FrameBgHovered]  = col(64, 56, 40);
+    c[ImGuiCol_FrameBgActive]   = col(74, 64, 46);
+    c[ImGuiCol_TitleBgActive]   = col(40, 34, 26);
+    c[ImGuiCol_Button]          = col(58, 78, 52);
+    c[ImGuiCol_ButtonHovered]   = col(78, 104, 66);
+    c[ImGuiCol_ButtonActive]    = col(46, 62, 42);
+    c[ImGuiCol_Header]          = col(70, 60, 40);
+    c[ImGuiCol_HeaderHovered]   = col(96, 80, 50);
+    c[ImGuiCol_HeaderActive]    = col(110, 90, 56);
+    c[ImGuiCol_TableHeaderBg]   = col(60, 50, 34);
+    c[ImGuiCol_TableRowBg]      = col(40, 36, 28);
+    c[ImGuiCol_TableRowBgAlt]   = col(46, 42, 32);
+    c[ImGuiCol_TableBorderStrong] = col(120, 92, 48);
+    c[ImGuiCol_TableBorderLight]  = col(80, 64, 40);
+    c[ImGuiCol_Text]            = col(238, 232, 214);
+    c[ImGuiCol_TextDisabled]    = col(150, 140, 120);
+    c[ImGuiCol_CheckMark]       = col(220, 180, 90);
+    c[ImGuiCol_SliderGrab]      = col(200, 160, 80);
+    c[ImGuiCol_SliderGrabActive]= col(230, 190, 100);
+    c[ImGuiCol_ScrollbarGrab]   = col(90, 76, 50);
+    c[ImGuiCol_Separator]       = col(120, 92, 48);
+}
 
 bool App::init(const std::string& dataDir) {
     dataDir_ = dataDir;
+    ApplyNostalgiaTheme();
     cfg_.loadFile(dataDir_ + "/engine.cfg");
     if (!db_.load(dataDir_)) {
         status_ = "Failed to load database from " + dataDir_;
         return false;
     }
+    AppLoadTexture(dataDir_ + "/images/menu_bg.png", &menuBg_);
     leagues_ = db_.leagues();
     status_ = "Loaded " + std::to_string(db_.teams.size()) + " teams across " +
               std::to_string(leagues_.size()) + " leagues.";
@@ -74,6 +183,20 @@ void App::beginScreen(const char* title) {
     ImGui::Spacing();
 }
 
+void App::beginFullscreen(const char* id, bool withBackground) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus |
+                             ImGuiWindowFlags_NoScrollbar;
+    if (!withBackground) flags |= ImGuiWindowFlags_NoBackground;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::Begin(id, nullptr, flags);
+    ImGui::PopStyleVar();
+}
+
 void App::render() {
     switch (screen_) {
         case Screen::Main: renderMain(); break;
@@ -87,27 +210,76 @@ void App::render() {
 }
 
 void App::renderMain() {
-    beginScreen("Nostalgia Manager Simulation");
-    ImGui::TextDisabled("%s", status_.c_str());
-    ImGui::Spacing();
-    ImGui::Spacing();
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    const ImVec2 pos = vp->WorkPos;
+    const ImVec2 size = vp->WorkSize;
 
-    ImVec2 sz(280, 44);
-    if (ImGui::Button("Friendly Match", sz)) screen_ = Screen::Friendly;
-    ImGui::Spacing();
-    if (ImGui::Button("Career", sz)) screen_ = Screen::Career;
-    ImGui::Spacing();
-    if (ImGui::Button("Database", sz)) screen_ = Screen::Database;
-    ImGui::Spacing();
-    if (ImGui::Button("Data Sources", sz)) {
-        std::strncpy(playersPath_, "", sizeof(playersPath_));
-        screen_ = Screen::Data;
+    // Background: the stadium key-art, scaled to "cover" the window.
+    ImDrawList* bg = ImGui::GetBackgroundDrawList();
+    if (menuBg_.ok && menuBg_.w > 0 && menuBg_.h > 0) {
+        float ws = size.x / size.y, is = (float)menuBg_.w / (float)menuBg_.h;
+        ImVec2 uv0(0, 0), uv1(1, 1);
+        if (ws > is) {  // window wider than image: crop top/bottom
+            float v = is / ws;
+            uv0.y = (1 - v) * 0.5f;
+            uv1.y = 1 - uv0.y;
+        } else {  // crop left/right
+            float u = ws / is;
+            uv0.x = (1 - u) * 0.5f;
+            uv1.x = 1 - uv0.x;
+        }
+        bg->AddImage(menuBg_.id, pos, ImVec2(pos.x + size.x, pos.y + size.y), uv0, uv1);
+    } else {
+        bg->AddRectFilledMultiColor(pos, ImVec2(pos.x + size.x, pos.y + size.y),
+                                    IM_COL32(20, 40, 70, 255), IM_COL32(20, 40, 70, 255),
+                                    IM_COL32(10, 20, 14, 255), IM_COL32(10, 20, 14, 255));
+        ImVec2 ts = ImGui::CalcTextSize("Nostalgia Manager Simulation");
+        bg->AddText(ImVec2(pos.x + (size.x - ts.x) * 0.5f, pos.y + size.y * 0.18f),
+                    IM_COL32(245, 215, 120, 255), "Nostalgia Manager Simulation");
     }
-    ImGui::Spacing();
-    if (ImGui::Button("About", sz)) screen_ = Screen::About;
-    ImGui::Spacing();
-    ImGui::Spacing();
-    if (ImGui::Button("Quit", sz)) quit_ = true;
+
+    beginFullscreen("##main", false);
+
+    // Centred vertical stack of glossy coloured buttons, as in the mock-up.
+    const ImVec2 bsz(430, 58);
+    const float gap = 14.0f;
+    struct Item { const char* label; ImU32 col; Screen scr; };
+    const Item items[] = {
+        {"Friendly Match", IM_COL32(86, 150, 38, 255), Screen::Friendly},
+        {"Career Game", IM_COL32(196, 150, 40, 255), Screen::Career},
+        {"Load Game", IM_COL32(40, 92, 178, 255), Screen::Career},
+        {"Edit Database", IM_COL32(180, 92, 30, 255), Screen::Database},
+        {"Exit", IM_COL32(188, 42, 38, 255), Screen::Main},
+    };
+    const int n = (int)(sizeof(items) / sizeof(items[0]));
+    float startY = pos.y + size.y * 0.50f;
+    float startX = pos.x + (size.x - bsz.x) * 0.5f;
+
+    ImGui::SetWindowFontScale(1.25f);
+    for (int i = 0; i < n; ++i) {
+        ImGui::SetCursorScreenPos(ImVec2(startX, startY + i * (bsz.y + gap)));
+        if (tintButton(items[i].label, items[i].col, bsz)) {
+            if (std::strcmp(items[i].label, "Exit") == 0) {
+                quit_ = true;
+            } else if (std::strcmp(items[i].label, "Load Game") == 0) {
+                careerLoad();
+            } else {
+                screen_ = items[i].scr;
+            }
+        }
+    }
+    ImGui::SetWindowFontScale(1.0f);
+
+    // Keep Data Sources / About reachable as small secondary links.
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + 16, pos.y + size.y - 40));
+    if (ImGui::Button("Data Sources")) screen_ = Screen::Data;
+    ImGui::SameLine();
+    if (ImGui::Button("About")) screen_ = Screen::About;
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 st = ImGui::CalcTextSize(status_.c_str());
+    dl->AddText(ImVec2(pos.x + size.x - st.x - 16, pos.y + size.y - 32),
+                IM_COL32(230, 225, 205, 230), status_.c_str());
 
     ImGui::End();
 }
@@ -190,6 +362,10 @@ void App::startMatch(Team* home, Team* away) {
     matchOver_ = false;
     matchHome_ = home->name;
     matchAway_ = away->name;
+    matchHomeTeam_ = home;
+    matchAwayTeam_ = away;
+    homeScorers_.clear();
+    awayScorers_.clear();
 
     MatchEngine engine(cfg_, static_cast<unsigned>(std::time(nullptr)));
     MatchEngine* ep = &engine;
@@ -207,11 +383,21 @@ void App::startMatch(Team* home, Team* away) {
     finalHS_ = r.homeShots;
     finalAS_ = r.awayShots;
 
-    // Fill running score across frames from the goal annotations.
+    // Fill running score across frames and collect scorers per side.
     int hg = 0, ag = 0;
     for (auto& f : frames_) {
         int h, a;
         if (f.text.rfind("GOAL!", 0) == 0 && parseScore(f.text, h, a)) {
+            // Extract scorer name: "GOAL! #<n> <Name> scores! (h-a)".
+            std::string who;
+            size_t s = f.text.find(' ');
+            size_t e = f.text.find(" scores!");
+            if (s != std::string::npos && e != std::string::npos && e > s)
+                who = f.text.substr(s + 1, e - s - 1);
+            char line[160];
+            std::snprintf(line, sizeof(line), "%s  %d'", who.c_str(), f.minute);
+            if (h > hg) homeScorers_.emplace_back(f.minute, line);
+            else if (a > ag) awayScorers_.emplace_back(f.minute, line);
             hg = h;
             ag = a;
         }
@@ -232,59 +418,158 @@ void App::renderMatch() {
     }
     if (playIdx_ >= frames_.size()) matchOver_ = true;
 
+    // Space bar toggles play/pause, as noted on the mock-up's bottom bar.
+    if (ImGui::IsKeyPressed(ImGuiKey_Space)) playing_ = !playing_;
+
     size_t cur = playIdx_ == 0 ? 0 : playIdx_ - 1;
     const Frame* f = frames_.empty() ? nullptr : &frames_[std::min(cur, frames_.size() - 1)];
-
-    beginScreen("Match Day");
-
     int hg = f ? f->hg : 0, ag = f ? f->ag : 0;
     int minute = f ? f->minute : 0;
-    ImGui::SetWindowFontScale(1.5f);
-    ImGui::Text("%s  %d - %d  %s", matchHome_.c_str(), hg, ag, matchAway_.c_str());
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(vp->WorkPos);
+    ImGui::SetNextWindowSize(vp->WorkSize);
+    ImGuiWindowFlags wf = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                          ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar;
+    ImGui::Begin("##match", nullptr, wf);
+
+    const float fullW = ImGui::GetContentRegionAvail().x;
+
+    // ---- Scoreboard: TEAM  H - A  TEAM, with the clock underneath ----
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    char score[64];
+    std::snprintf(score, sizeof(score), "%d  -  %d", hg, ag);
+    ImGui::SetWindowFontScale(2.0f);
+    ImVec2 ssz = ImGui::CalcTextSize(score);
+    ImGui::SetWindowFontScale(1.4f);
+    ImVec2 hsz = ImGui::CalcTextSize(matchHome_.c_str());
+    ImVec2 asz = ImGui::CalcTextSize(matchAway_.c_str());
+    float cx = ImGui::GetCursorScreenPos().x + fullW * 0.5f;
+    float y0 = ImGui::GetCursorScreenPos().y + 4;
+    dl->AddText(ImVec2(cx - fullW * 0.25f - hsz.x * 0.5f, y0 + 6),
+                IM_COL32(140, 200, 255, 255), matchHome_.c_str());
+    dl->AddText(ImVec2(cx + fullW * 0.25f - asz.x * 0.5f, y0 + 6),
+                IM_COL32(255, 200, 140, 255), matchAway_.c_str());
+    ImGui::SetWindowFontScale(2.0f);
+    dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                ImVec2(cx - ssz.x * 0.5f, y0), IM_COL32(255, 240, 190, 255), score);
     ImGui::SetWindowFontScale(1.0f);
-    ImGui::SameLine();
-    ImGui::TextDisabled("   %2d'", minute);
+    char clk[16];
+    std::snprintf(clk, sizeof(clk), "%2d'", minute);
+    ImVec2 csz = ImGui::CalcTextSize(clk);
+    dl->AddText(ImVec2(cx - csz.x * 0.5f, y0 + ssz.y + 2), IM_COL32(220, 220, 210, 255), clk);
+    ImGui::Dummy(ImVec2(fullW, ssz.y + csz.y + 10));
+
+    // Scorers under each team name (only those that have happened so far).
+    ImGui::Columns(2, "scorers", false);
+    for (const auto& sc : homeScorers_)
+        if (sc.first <= minute) ImGui::TextDisabled("%s", sc.second.c_str());
+    ImGui::NextColumn();
+    for (const auto& sc : awayScorers_) {
+        if (sc.first > minute) continue;
+        ImVec2 t = ImGui::CalcTextSize(sc.second.c_str());
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - t.x - 16);
+        ImGui::TextDisabled("%s", sc.second.c_str());
+    }
+    ImGui::Columns(1);
     ImGui::Separator();
 
-    ImGui::BeginChild("pitch", ImVec2(560, 360), true);
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 255, 200, 255));
+    // ---- Main row: squad | pitch+stats | squad ----
+    const float sideW = 240.0f;
+    const float bottomH = 54.0f;
+    const float feedH = 150.0f;
+    float rowH = ImGui::GetContentRegionAvail().y - bottomH - feedH - 16;
+    if (rowH < 200) rowH = 200;
+    float centreW = fullW - 2 * (sideW + ImGui::GetStyle().ItemSpacing.x);
+
+    squadPanel("home_sq", matchHome_.c_str(), matchHomeTeam_, ImVec2(sideW, rowH));
+    ImGui::SameLine();
+
+    ImGui::BeginGroup();
+    float statsH = 132.0f;
+    ImGui::BeginChild("pitch", ImVec2(centreW, rowH - statsH - ImGui::GetStyle().ItemSpacing.y),
+                      true);
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(190, 255, 190, 255));
     if (f) ImGui::TextUnformatted(f->pitch.c_str());
     ImGui::PopStyleColor();
     ImGui::EndChild();
+
+    ImGui::BeginChild("stats", ImVec2(centreW, statsH), true);
+    panelHeader("Game Stats");
+    if (ImGui::BeginTable("st", 3, ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Home", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Stat", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Away", ImGuiTableColumnFlags_WidthStretch);
+        auto row = [](const char* name, const char* h, const char* a) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(h);
+            ImGui::TableSetColumnIndex(1);
+            float w = ImGui::GetContentRegionAvail().x, tw = ImGui::CalcTextSize(name).x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (w - tw) * 0.5f);
+            ImGui::TextDisabled("%s", name);
+            ImGui::TableSetColumnIndex(2);
+            float w2 = ImGui::GetContentRegionAvail().x, tw2 = ImGui::CalcTextSize(a).x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + w2 - tw2);
+            ImGui::TextUnformatted(a);
+        };
+        char hb[16], ab[16];
+        std::snprintf(hb, sizeof(hb), "%d", hg); std::snprintf(ab, sizeof(ab), "%d", ag);
+        row("Goals", hb, ab);
+        if (matchOver_) {
+            std::snprintf(hb, sizeof(hb), "%d", finalHS_);
+            std::snprintf(ab, sizeof(ab), "%d", finalAS_);
+            row("Attempts", hb, ab);
+        } else {
+            row("Attempts", "-", "-");
+        }
+        ImGui::EndTable();
+    }
+    ImGui::EndChild();
+    ImGui::EndGroup();
+
     ImGui::SameLine();
-    ImGui::BeginChild("feed", ImVec2(0, 360), true);
-    // Show the most recent events up to the current index.
+    squadPanel("away_sq", matchAway_.c_str(), matchAwayTeam_, ImVec2(sideW, rowH));
+
+    // ---- Match events feed ----
+    ImGui::BeginChild("feed", ImVec2(fullW, feedH), true);
+    panelHeader("Match Events");
     size_t shown = playIdx_;
-    size_t start = shown > 16 ? shown - 16 : 0;
-    for (size_t i = start; i < shown && i < frames_.size(); ++i) {
+    size_t startI = shown > 40 ? shown - 40 : 0;
+    for (size_t i = startI; i < shown && i < frames_.size(); ++i) {
         const Frame& ev = frames_[i];
         if (ev.key)
-            ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%2d'  %s", ev.minute,
-                               ev.text.c_str());
+            ImGui::TextColored(ImVec4(1, 0.9f, 0.3f, 1), "%2d'  %s", ev.minute, ev.text.c_str());
         else
             ImGui::TextWrapped("%2d'  %s", ev.minute, ev.text.c_str());
     }
     if (playing_) ImGui::SetScrollHereY(1.0f);
     ImGui::EndChild();
 
-    ImGui::Spacing();
-    if (ImGui::Button(playing_ ? "Pause" : "Play")) playing_ = !playing_;
-    ImGui::SameLine();
-    if (ImGui::Button("Skip to End")) {
-        playIdx_ = frames_.size();
-        matchOver_ = true;
-    }
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
-    ImGui::SliderFloat("Speed", &speed_, 2.0f, 40.0f, "%.0f ev/s");
-
+    // ---- Bottom control bar ----
     if (matchOver_) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.4f, 1, 0.5f, 1), "Full Time:  %s %d - %d %s",
-                           matchHome_.c_str(), finalHG_, finalAG_, matchAway_.c_str());
-        ImGui::Text("Shots: %d - %d", finalHS_, finalAS_);
-        ImGui::Spacing();
-        if (ImGui::Button("Back to Menu", ImVec2(200, 36))) screen_ = Screen::Main;
+        if (tintButton("Back to Menu", IM_COL32(40, 92, 178, 255), ImVec2(220, bottomH - 10)))
+            screen_ = Screen::Main;
+        ImGui::SameLine();
+        if (tintButton("Watch Again", IM_COL32(86, 150, 38, 255), ImVec2(180, bottomH - 10))) {
+            playIdx_ = 0;
+            playing_ = true;
+            matchOver_ = false;
+        }
+    } else {
+        char bar[64];
+        std::snprintf(bar, sizeof(bar), "%s  (space)", playing_ ? "Pause Match" : "Continue");
+        if (tintButton(bar, IM_COL32(60, 120, 170, 255),
+                       ImVec2(fullW - 460, bottomH - 10)))
+            playing_ = !playing_;
+        ImGui::SameLine();
+        if (ImGui::Button("Skip to End", ImVec2(160, bottomH - 10))) {
+            playIdx_ = frames_.size();
+            matchOver_ = true;
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(260);
+        ImGui::SliderFloat("Speed", &speed_, 2.0f, 40.0f, "%.0f ev/s");
     }
 
     ImGui::End();

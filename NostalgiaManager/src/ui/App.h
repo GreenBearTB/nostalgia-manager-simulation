@@ -3,11 +3,29 @@
 #include <unordered_map>
 #include <vector>
 
+#include "imgui.h"
+
 #include "../data/Database.h"
 #include "../engine/Config.h"
 #include "../engine/MatchEngine.h"
 
 namespace nm {
+
+// A GPU texture handle. Created by the active rendering backend (OpenGL3 or
+// Direct3D 11) via AppLoadTexture, which each platform entry point defines.
+struct AppTexture {
+    ImTextureID id = (ImTextureID)0;
+    int w = 0;
+    int h = 0;
+    bool ok = false;
+};
+
+// Loads a PNG/JPG file into a GPU texture. Implemented per backend in the
+// platform entry point (main_glfw.cpp / main_win32.cpp).
+bool AppLoadTexture(const std::string& path, AppTexture* out);
+
+// Applies the shared "nostalgia" visual style (colors, rounding, spacing).
+void ApplyNostalgiaTheme();
 
 // Dear ImGui application: the windowed front-end for Nostalgia Manager
 // Simulation. It drives the same Config / Database / MatchEngine core used by
@@ -38,6 +56,7 @@ private:
     };
 
     void beginScreen(const char* title);
+    void beginFullscreen(const char* id, bool withBackground);
     void renderMain();
     void renderFriendly();
     void renderMatch();
@@ -64,6 +83,7 @@ private:
     Screen screen_ = Screen::Main;
     bool quit_ = false;
 
+    AppTexture menuBg_;
     std::vector<std::string> leagues_;
 
     // Friendly selection
@@ -76,6 +96,9 @@ private:
     std::vector<Frame> frames_;
     std::string matchHome_, matchAway_;
     int finalHG_ = 0, finalAG_ = 0, finalHS_ = 0, finalAS_ = 0;
+    std::vector<std::pair<int, std::string>> homeScorers_, awayScorers_;
+    Team* matchHomeTeam_ = nullptr;
+    Team* matchAwayTeam_ = nullptr;
     size_t playIdx_ = 0;
     double playAccum_ = 0.0;
     float speed_ = 8.0f;  // events revealed per second

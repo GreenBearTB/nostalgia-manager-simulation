@@ -1,5 +1,6 @@
 // GLFW + OpenGL3 entry point. Used for the portable (Linux/macOS) build and for
 // automated visual testing. The Windows build uses main_win32.cpp (DX11).
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -11,7 +12,33 @@
 
 #include <GLFW/glfw3.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include "../ui/App.h"
+
+namespace nm {
+// OpenGL implementation of the texture loader declared in App.h.
+bool AppLoadTexture(const std::string& path, AppTexture* out) {
+    int w = 0, h = 0, ch = 0;
+    unsigned char* data = stbi_load(path.c_str(), &w, &h, &ch, 4);
+    if (!data) return false;
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    stbi_image_free(data);
+    out->id = (ImTextureID)(intptr_t)tex;
+    out->w = w;
+    out->h = h;
+    out->ok = true;
+    return true;
+}
+}  // namespace nm
 
 namespace {
 std::string findDataDir(int argc, char** argv) {
