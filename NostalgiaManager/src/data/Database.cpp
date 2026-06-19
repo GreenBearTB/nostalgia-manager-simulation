@@ -26,6 +26,55 @@ std::string normKey(const std::string& s) {
     return out;
 }
 
+// Fold accented Latin characters to plain ASCII so names from Championship
+// Manager / FM exports render in the bitmap GUI font (which only has ASCII).
+// Handles both raw Latin-1 bytes and UTF-8 two-byte Latin-1 supplement.
+std::string asciiFold(const std::string& s) {
+    auto mapLatin1 = [](unsigned cp) -> const char* {
+        switch (cp) {
+            case 0xC0: case 0xC1: case 0xC2: case 0xC3: case 0xC4: case 0xC5: return "A";
+            case 0xC6: return "AE";
+            case 0xC7: return "C";
+            case 0xC8: case 0xC9: case 0xCA: case 0xCB: return "E";
+            case 0xCC: case 0xCD: case 0xCE: case 0xCF: return "I";
+            case 0xD0: return "D"; case 0xD1: return "N";
+            case 0xD2: case 0xD3: case 0xD4: case 0xD5: case 0xD6: case 0xD8: return "O";
+            case 0xD9: case 0xDA: case 0xDB: case 0xDC: return "U";
+            case 0xDD: return "Y"; case 0xDE: return "Th"; case 0xDF: return "ss";
+            case 0xE0: case 0xE1: case 0xE2: case 0xE3: case 0xE4: case 0xE5: return "a";
+            case 0xE6: return "ae";
+            case 0xE7: return "c";
+            case 0xE8: case 0xE9: case 0xEA: case 0xEB: return "e";
+            case 0xEC: case 0xED: case 0xEE: case 0xEF: return "i";
+            case 0xF0: return "d"; case 0xF1: return "n";
+            case 0xF2: case 0xF3: case 0xF4: case 0xF5: case 0xF6: case 0xF8: return "o";
+            case 0xF9: case 0xFA: case 0xFB: case 0xFC: return "u";
+            case 0xFD: case 0xFF: return "y"; case 0xFE: return "th";
+            default: return nullptr;
+        }
+    };
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char b = static_cast<unsigned char>(s[i]);
+        if (b < 0x80) {
+            out += static_cast<char>(b);
+        } else if (b == 0xC3 && i + 1 < s.size()) {
+            unsigned char n = static_cast<unsigned char>(s[i + 1]);
+            unsigned cp = 0xC0 + (n & 0x3F);
+            const char* r = mapLatin1(cp);
+            if (r) out += r;
+            ++i;
+        } else if (b == 0xC2 && i + 1 < s.size()) {
+            ++i;  // drop C2-prefixed punctuation (©, etc.)
+        } else {
+            const char* r = mapLatin1(b);
+            if (r) out += r;  // raw Latin-1 byte
+        }
+    }
+    return out;
+}
+
 Mentality mentalityFromString(const std::string& s) {
     std::string v = lower(s);
     if (v.rfind("def", 0) == 0) return Mentality::Defensive;
@@ -128,13 +177,13 @@ bool Database::loadTeams(const std::string& path) {
     bool hasId = h.has("id");
     for (size_t i = 1; i < rows.size(); ++i) {
         const auto& r = rows[i];
-        std::string name = h.get(r, {"name", "club", "clubname", "teamname", "team"});
+        std::string name = asciiFold(h.get(r, {"name", "club", "clubname", "teamname", "team"}));
         if (name.empty() || isNonClub(name)) continue;
         Team t;
         t.id = hasId ? h.getInt(r, {"id"}) : nextTeamId_++;
         if (t.id >= nextTeamId_) nextTeamId_ = t.id + 1;
         t.name = name;
-        t.league = h.get(r, {"league", "division", "div", "competition", "nation", "country"});
+        t.league = asciiFold(h.get(r, {"league", "division", "div", "competition", "nation", "country"}));
         if (t.league.empty()) t.league = "League";
         std::string f = h.get(r, {"formation", "formationa", "formationb", "shape"});
         if (!f.empty()) t.formation = f;
@@ -205,7 +254,7 @@ bool Database::loadPlayers(const std::string& path) {
 
         if (legacy) {
             p.id = h.getInt(r, {"id"});
-            p.name = h.get(r, {"name"});
+            p.name = asciiFold(h.get(r, {"name"}));
             p.role = RoleFromString(h.get(r, {"role"}));
             p.shirtNumber = h.getInt(r, {"number"});
             for (const auto& an : AttributeNames()) {
@@ -228,7 +277,7 @@ bool Database::loadPlayers(const std::string& path) {
         }
         if (name.empty()) continue;
         p.id = autoId++;
-        p.name = name;
+        p.name = asciiFold(name);
 
         // Overall ability (0-200) drives the GK rating and acts as a baseline
         // for skills the export left blank (these databases are often sparse).
@@ -279,7 +328,7 @@ bool Database::loadPlayers(const std::string& path) {
         else
             p.attr.set("Goalkeeping", clampStat(std::max(1, abil20 / 4)));
 
-        std::string clubName = h.get(r, {"club", "team", "clubname"});
+        std::string clubName = asciiFold(h.get(r, {"club", "team", "clubname"}));
         // Skip free agents / unattached players so they don't form junk teams.
         if (clubName.empty() || isNonClub(clubName)) continue;
         size_t idx = ensureIdx(clubName);

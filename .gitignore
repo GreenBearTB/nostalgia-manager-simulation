@@ -21,7 +21,11 @@ ipch/
 
 # Save games (keep the folder, ignore the saves)
 NostalgiaManager/saves/*.nms
+NostalgiaManager/data/career.sav
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Dear ImGui runtime layout
+imgui.ini

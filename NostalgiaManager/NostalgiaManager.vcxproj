@@ -39,12 +39,15 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>..\third_party\imgui;..\third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
@@ -54,24 +57,33 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>..\third_party\imgui;..\third_party\imgui\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
+      <AdditionalDependencies>d3d11.lib;dxgi.lib;d3dcompiler.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\core\Team.cpp" />
     <ClCompile Include="src\data\Database.cpp" />
     <ClCompile Include="src\engine\Config.cpp" />
     <ClCompile Include="src\engine\MatchEngine.cpp" />
-    <ClCompile Include="src\ui\Game.cpp" />
+    <ClCompile Include="src\ui\App.cpp" />
+    <ClCompile Include="src\platform\main_win32.cpp" />
+    <ClCompile Include="..\third_party\imgui\imgui.cpp" />
+    <ClCompile Include="..\third_party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\third_party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\third_party\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\third_party\imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="..\third_party\imgui\backends\imgui_impl_dx11.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\core\Attributes.h" />
