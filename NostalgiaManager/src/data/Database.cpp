@@ -208,7 +208,10 @@ bool Database::loadPlayers(const std::string& path) {
     bool legacy = h.has("teamid") && h.has("role");
 
     // For CM/FM exports: resolve each engine skill to a column once and detect
-    // the value scale (some databases store skills as 0-100 rather than 1-20).
+    // the value scale. Some databases store skills 0-100, others 1-20; a few
+    // rows contain corrupt outliers, so detection ignores values above 100
+    // (otherwise a single bad cell would crush every player's ratings).
+    constexpr int kSkillMax = 100;  // largest plausible raw skill value
     std::vector<std::pair<std::string, int>> skillCols;
     double skillScale = 1.0;
     if (!legacy) {
@@ -218,12 +221,15 @@ bool Database::loadPlayers(const std::string& path) {
                 if (h.has(k)) { c = h.idx.at(k); break; }
             skillCols.emplace_back(kv.first, c);
         }
-        int maxSkill = 0;
+        long total = 0, over20 = 0;
         for (size_t i = 1; i < rows.size(); ++i)
             for (const auto& sc : skillCols)
-                if (sc.second >= 0 && sc.second < static_cast<int>(rows[i].size()))
-                    maxSkill = std::max(maxSkill, toInt(rows[i][sc.second]));
-        if (maxSkill > 20) skillScale = 20.0 / maxSkill;
+                if (sc.second >= 0 && sc.second < static_cast<int>(rows[i].size())) {
+                    int v = toInt(rows[i][sc.second]);
+                    if (v > 0 && v <= kSkillMax) { ++total; if (v > 20) ++over20; }
+                }
+        // If a meaningful share of values exceed 20, the file uses a 0-100 scale.
+        if (total > 0 && over20 > total / 20) skillScale = 20.0 / kSkillMax;
     }
 
     std::unordered_map<std::string, size_t> nameToIdx;
@@ -269,12 +275,12 @@ bool Database::loadPlayers(const std::string& path) {
         }
 
         // --- Championship Manager / FM style export ---
-        std::string name = h.get(r, {"fullname", "name", "playername"});
-        if (name.empty()) {
-            std::string fn = h.get(r, {"firstname", "firstnam"});
-            std::string sn = h.get(r, {"secondname", "surname", "lastname"});
-            name = Csv::trim(fn + " " + sn);
-        }
+        // Prefer First + Second name: some exports append the club to "Fullname"
+        // (e.g. "Soren Andersen AaB"), so build the display name from the parts.
+        std::string fn = h.get(r, {"firstname", "firstnam"});
+        std::string sn = h.get(r, {"secondname", "surname", "lastname"});
+        std::string name = Csv::trim(fn + " " + sn);
+        if (name.empty()) name = h.get(r, {"fullname", "name", "playername"});
         if (name.empty()) continue;
         p.id = autoId++;
         p.name = asciiFold(name);
@@ -285,14 +291,23 @@ bool Database::loadPlayers(const std::string& path) {
         int abil20 = static_cast<int>(std::lround(ability / 10.0));
         int baseline = ability > 0 ? clampStat(abil20) : 8;
 
-        // Skills, rescaled to the engine's 1-20 range if needed.
+        // Skills, rescaled to the engine's 1-20 range. Values above the plausible
+        // ceiling are corrupt outliers and are treated as missing (filled from
+        // the ability baseline) rather than dragging the rating up or down.
         for (const auto& sc : skillCols) {
             int raw = (sc.second >= 0 && sc.second < static_cast<int>(r.size()))
                           ? toInt(r[sc.second])
                           : 0;
-            int v = raw > 0 ? static_cast<int>(std::lround(raw * skillScale)) : baseline;
+            int v = (raw > 0 && raw <= kSkillMax)
+                        ? static_cast<int>(std::lround(raw * skillScale))
+                        : baseline;
             p.attr.set(sc.first, clampStat(v));
         }
+
+        // Some exports leave Jumping blank; derive it from Heading/Strength.
+        if (toInt(h.get(r, {"jumping"})) <= 0)
+            p.attr.set("Jumping",
+                       clampStat((p.attr.get("Heading") + p.attr.get("Strength")) / 2));
 
         // Role from positional ratings (0-2). Try the detailed CM block first,
         // then fall back to the broader role columns.
