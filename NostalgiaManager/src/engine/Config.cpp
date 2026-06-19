@@ -137,7 +137,7 @@ void Config::loadDefaults() {
     v["exec.Longshot.mental.Influence"] = 0.50;
     v["exec.Longshot.physical.Strength"] = 0.50;
     v["exec.Longshot.physical.Stamina"] = 0.50;
-    v["threshold.Longshot.Normal"] = 0.72;
+    v["threshold.Longshot.Normal"] = 0.68;
 
     // Finish (shot) execution
     v["exec.Finish.skill.Shooting"] = 0.60;
@@ -147,8 +147,8 @@ void Config::loadDefaults() {
     v["exec.Finish.mental.Positioning"] = 0.50;
     v["exec.Finish.physical.Strength"] = 0.50;
     v["exec.Finish.physical.Pace"] = 0.50;
-    v["threshold.Finish.Good"] = 0.62;
-    v["threshold.Finish.Tight"] = 0.74;
+    v["threshold.Finish.Good"] = 0.60;
+    v["threshold.Finish.Tight"] = 0.70;
 
     // Finish (header) execution
     v["exec.Header.skill.Heading"] = 0.60;
@@ -157,7 +157,7 @@ void Config::loadDefaults() {
     v["exec.Header.mental.Positioning"] = 0.50;
     v["exec.Header.physical.Jumping"] = 0.50;
     v["exec.Header.physical.Strength"] = 0.50;
-    v["threshold.Header.Normal"] = 0.68;
+    v["threshold.Header.Normal"] = 0.66;
 
     // ---- Defensive pressure (spec section 9) ----
     v["pressure.Tackling"] = 0.30;
